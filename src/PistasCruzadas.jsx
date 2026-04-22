@@ -22,6 +22,71 @@ const WORD_LIST = [
   "LUZ","SOMBRA","COLOR","VERDE","ROJO","AZUL","FRÍO","CALOR","RÁPIDO","LENTO",
 ];
 
+// ── End game messages ─────────────────────────────────────────────────────────
+const END_MESSAGES = {
+  perfect: [
+    "🏆 ¡Ganaron! ¡Comunicación perfecta!",
+    "🏆 ¡Ganaron! ¡Son una máquina!",
+    "🏆 ¡Ganaron! ¡Sin errores, increíble!",
+    "🏆 ¡Ganaron! ¡Mente colmena activada!",
+  ],
+  great: [
+    "🎉 ¡Bien jugado! Casi perfectos.",
+    "🎉 ¡Muy bien! Pero se puede mejorar.",
+    "🎉 ¡Buen equipo! Alguna que otra pifió.",
+    "🎉 ¡Sólido! Unos pocos errores nomás.",
+  ],
+  ok: [
+    "😅 Falta comunicación.",
+    "😅 Se entendieron... más o menos.",
+    "😅 Hay que hablar más antes de jugar.",
+    "😅 Regular. El chat estaba ahí para algo.",
+  ],
+  bad: [
+    "💀 Horribles. A practicar.",
+    "💀 ¿Estaban jugando el mismo juego?",
+    "💀 Comunicación = 0.",
+    "💀 Esto fue un desastre glorioso.",
+  ],
+};
+
+function getEndMessage(correct) {
+  let bucket;
+  if (correct >= 24) bucket = "perfect";
+  else if (correct >= 21) bucket = "great";
+  else if (correct >= 16) bucket = "ok";
+  else bucket = "bad";
+  const opts = END_MESSAGES[bucket];
+  return opts[Math.floor(Math.random() * opts.length)];
+}
+
+// ── Hint validation ───────────────────────────────────────────────────────────
+function getStem(word) {
+  return word.toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // strip accents
+    .replace(/aciones$|acion$|mente$|iendo$|ando$|uras$|ura$|eres$|eria$|cion$|sion$|ista$|ismo$|dor$|dora$|ados$|adas$|ido$|ida$|ado$|ada$|ar$|er$|ir$|es$|os$|as$|en$|an$|s$/, "");
+}
+
+function sharesRoot(hint, clueWord) {
+  const hStem = getStem(hint);
+  const cStem = getStem(clueWord);
+  if (hStem.length < 3 || cStem.length < 3) return false;
+  const minLen = Math.min(hStem.length, cStem.length, 5);
+  return hStem.slice(0, minLen) === cStem.slice(0, minLen);
+}
+
+function validateHint(hint, clues, coord, usedWords) {
+  const word = hint.trim().toUpperCase();
+  if (!word) return "Escribí una palabra.";
+  if (word.split(/\s+/).length > 1) return "La pista debe ser una sola palabra.";
+  if (usedWords.map(w => w.toUpperCase()).includes(word)) return `"${word}" ya fue usada en esta partida.`;
+  const row = coord[0]; const col = coord[1];
+  const rowClue = clues.rows[row]; const colClue = clues.cols[col];
+  if (sharesRoot(word, rowClue)) return `"${word}" comparte raíz con "${rowClue}".`;
+  if (sharesRoot(word, colClue)) return `"${word}" comparte raíz con "${colClue}".`;
+  return null;
+}
+
 // ── Palette ───────────────────────────────────────────────────────────────────
 const C = {
   bg:      "#07090f",
@@ -197,6 +262,7 @@ export default function PistasCruzadas() {
   const [joinInput, setJoinInput]     = useState("");
   const [joinError, setJoinError]     = useState("");
   const [myWordInput, setMyWordInput] = useState("");
+  const [hintError, setHintError]     = useState("");
   const [guessTarget, setGuessTarget] = useState(null);
   const [guessRow, setGuessRow]       = useState("");
   const [guessCol, setGuessCol]       = useState("");
@@ -277,19 +343,23 @@ export default function PistasCruzadas() {
 
       const guessedCoord = coords[0];
       const correct = guessedCoord === target.coord;
-      const usedCoords = [...Object.values(players).map(p => p.coord).filter(Boolean), ...Object.keys(resolved), guessedCoord];
+      // On wrong guess: the REAL coord (target.coord) is lost forever, guessed coord stays free
+      // On correct guess: the guessed coord (= real coord) is completed
+      const coordToResolve = correct ? guessedCoord : target.coord;
+      const usedCoords = [...Object.values(players).map(p => p.coord).filter(Boolean), ...Object.keys(resolved), target.coord];
       const newCoord = pickCoord(usedCoords);
       const updates = {};
-      updates[`rooms/${rid}/resolved/${guessedCoord}`] = correct
+      updates[`rooms/${rid}/resolved/${coordToResolve}`] = correct
         ? { word: target.word, playerName: target.name } : "discarded";
       updates[`rooms/${rid}/players/${targetId}/coord`]         = newCoord;
       updates[`rooms/${rid}/players/${targetId}/word`]          = "";
       updates[`rooms/${rid}/players/${targetId}/wordPublished`] = false;
       updates[`rooms/${rid}/votes/${targetId}`] = null;
 
+      // On error: only show what was guessed, not the real coord
       const resultMsg = correct
         ? `✓ ¡Correcto! ${target.name} estaba en ${guessedCoord}`
-        : `✗ Incorrecto. ${guessedCoord} descartada (${target.name} estaba en ${target.coord})`;
+        : `✗ Incorrecto. Dijeron ${guessedCoord} pero no era. La coordenada de ${target.name} se perdió.`;
       try {
         await update(ref(db), updates);
         await push(ref(db, `rooms/${rid}/chat`), {
@@ -370,7 +440,16 @@ export default function PistasCruzadas() {
 
   // ── Publish word ──────────────────────────────────────────────────────────
   async function publishWord() {
-    const word = myWordInput.trim().toUpperCase(); if (!word || !roomId) return;
+    const word = myWordInput.trim().toUpperCase();
+    if (!word || !roomId) return;
+    // Collect all used words in this game
+    const usedWords = [
+      ...Object.values(game?.players || {}).map(p => p.word).filter(Boolean),
+      ...Object.values(game?.resolved || {}).filter(v => v !== "discarded").map(v => v.word).filter(Boolean),
+    ];
+    const error = validateHint(word, game?.clues, me?.coord, usedWords);
+    if (error) { setHintError(error); return; }
+    setHintError("");
     await update(ref(db, `rooms/${roomId}/players/${myId}`), { word, wordPublished: true });
     await push(ref(db, `rooms/${roomId}/chat`), {
       name: "🎮 Juego", color: C.gold, text: `${me?.name} publicó su pista: ${word}`, ts: Date.now(), system: true,
@@ -537,8 +616,13 @@ export default function PistasCruzadas() {
         {allDone && (
           <div style={{ maxWidth:600, margin:"0 auto 12px", background:"rgba(0,201,167,.1)",
             border:`1px solid ${C.teal}`, borderRadius:12, padding:"18px 22px", textAlign:"center", animation:"popIn .5s" }}>
-            <div style={{ fontSize:36 }}>🎉</div>
-            <p style={{ fontFamily:"'Syne',sans-serif", color:C.teal, fontSize:20, margin:"8px 0 0", fontWeight:800 }}>¡TABLERO COMPLETO!</p>
+            <div style={{ fontSize:36 }}>{ resolvedCount >= 24 ? "🏆" : resolvedCount >= 21 ? "🎉" : resolvedCount >= 16 ? "😅" : "💀" }</div>
+            <p style={{ fontFamily:"'Syne',sans-serif", color:C.teal, fontSize:18, margin:"8px 0 4px", fontWeight:800 }}>
+              {getEndMessage(resolvedCount)}
+            </p>
+            <p style={{ fontFamily:"'DM Mono',monospace", color:C.grayLt, fontSize:12, margin:0 }}>
+              {resolvedCount} correctas · {discardedCount} errores de 25
+            </p>
           </div>
         )}
 
@@ -724,11 +808,12 @@ export default function PistasCruzadas() {
                 <span style={{ fontSize:11, fontWeight:600, background:`${C.teal}22`, color:C.teal, padding:"3px 10px", borderRadius:20 }}>{myCol}: {clues.cols[myCol]}</span>
               </div>
               <div style={{ display:"flex", gap:8 }}>
-                <input className="inp" value={myWordInput} onChange={e => setMyWordInput(e.target.value)}
+                <input className="inp" value={myWordInput} onChange={e => { setMyWordInput(e.target.value); setHintError(""); }}
                   onKeyDown={e => e.key === "Enter" && publishWord()}
                   placeholder="Tu palabra pista…" style={{ flex:1, fontSize:15 }} />
                 <button className="btn" onClick={publishWord} disabled={!myWordInput.trim()} style={{ background:C.teal, color:"#07090f" }}>Publicar</button>
               </div>
+              {hintError && <div style={{ fontSize:12, color:C.red, marginTop:6, fontFamily:"'Figtree',sans-serif" }}>⚠ {hintError}</div>}
             </div>
           )}
         </div>
