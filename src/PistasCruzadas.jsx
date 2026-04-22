@@ -179,15 +179,15 @@ const CSS = `
 // ══════════════════════════════════════════════════════════════════════════════
 export default function PistasCruzadas() {
   const [myId] = useState(() => {
-    const s = sessionStorage.getItem("pc_myId");
+    const s = localStorage.getItem("pc_myId");
     if (s) return s;
-    const id = uid6(); sessionStorage.setItem("pc_myId", id); return id;
+    const id = uid6(); localStorage.setItem("pc_myId", id); return id;
   });
-  const [myName, setMyName] = useState(() => sessionStorage.getItem("pc_myName") || "");
+  const [myName, setMyName] = useState(() => localStorage.getItem("pc_myName") || "");
   const [screen, setScreen] = useState("menu");
 
   const [game, setGame]     = useState(null);
-  const [roomId, setRoomId] = useState(() => sessionStorage.getItem("pc_roomId") || "");
+  const [roomId, setRoomId] = useState(() => localStorage.getItem("pc_roomId") || "");
   const listenerRef         = useRef(null);
 
   const [chatMessages, setChatMessages] = useState([]);
@@ -241,7 +241,10 @@ export default function PistasCruzadas() {
   }, [chatMessages]);
 
   useEffect(() => {
-    if (roomId) sessionStorage.setItem("pc_roomId", roomId);
+    if (roomId) {
+      localStorage.setItem("pc_roomId", roomId);
+      setScreen("game");
+    }
   }, [roomId]);
 
   const me             = game?.players?.[myId];
@@ -301,7 +304,7 @@ export default function PistasCruzadas() {
   // ── Create room ───────────────────────────────────────────────────────────
   async function createRoom() {
     const name = myName.trim(); if (!name) return;
-    sessionStorage.setItem("pc_myName", name);
+    localStorage.setItem("pc_myName", name);
     const rid = uid6(); const clues = generateClues(); const coord = pickCoord([]);
     await set(ref(db, `rooms/${rid}`), {
       roomId: rid, clues, createdAt: Date.now(),
@@ -315,13 +318,37 @@ export default function PistasCruzadas() {
   async function joinRoom() {
     const name = myName.trim(); const rid = joinInput.trim().toUpperCase();
     if (!name || !rid) return;
-    sessionStorage.setItem("pc_myName", name);
+    localStorage.setItem("pc_myName", name);
     const snap = await get(ref(db, `rooms/${rid}`));
     if (!snap.exists()) { setJoinError("No existe una sala con ese código."); return; }
     const data = snap.val();
-    const usedCoords = Object.values(data.players || {}).map(p => p.coord).filter(Boolean);
-    const coord = pickCoord(usedCoords);
-    const colorIdx = Object.keys(data.players || {}).length;
+    const existingPlayers = data.players || {};
+
+    // ── ¿Ya existe un jugador con este nombre en la sala? ──
+    // Primero busco por myId (mismo dispositivo), luego por nombre (vuelve desde otro)
+    const existingById   = existingPlayers[myId];
+    const existingByName = Object.entries(existingPlayers).find(([, p]) => p.name?.toLowerCase() === name.toLowerCase());
+
+    if (existingById) {
+      // Mismo dispositivo, mismo ID → entrar directo sin modificar nada
+      setRoomId(rid); setJoinInput(""); setJoinError(""); setScreen("game");
+      return;
+    }
+
+    if (existingByName) {
+      // Mismo nombre desde otro dispositivo → adoptar ese ID
+      const [existingId] = existingByName;
+      localStorage.setItem("pc_myId", existingId);
+      // No podemos mutar myId (es const del useState), recargamos con el nuevo ID guardado
+      setRoomId(rid); setJoinInput(""); setJoinError("");
+      window.location.reload(); // recarga con el localStorage actualizado
+      return;
+    }
+
+    // Jugador nuevo
+    const usedCoords = Object.values(existingPlayers).map(p => p.coord).filter(Boolean);
+    const coord      = pickCoord(usedCoords);
+    const colorIdx   = Object.keys(existingPlayers).length;
     await update(ref(db, `rooms/${rid}/players/${myId}`), {
       name, color: PLAYER_COLORS[colorIdx % PLAYER_COLORS.length], coord, word: "", wordPublished: false,
     });
@@ -338,7 +365,7 @@ export default function PistasCruzadas() {
       set(ref(db, `rooms/${roomId}/votes/${myId}`), null);
     }
     setRoomId(""); setGame(null); setScreen("menu");
-    sessionStorage.removeItem("pc_roomId");
+    localStorage.removeItem("pc_roomId");
   }
 
   // ── Publish word ──────────────────────────────────────────────────────────
