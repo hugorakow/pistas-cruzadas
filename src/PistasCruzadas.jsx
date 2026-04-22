@@ -1,13 +1,21 @@
 import { useState, useEffect, useRef } from "react";
 import { db } from "./firebase";
 import {
-  ref, set, update, onValue, off, push, get
+  ref, set, update, onValue, off, push, get, runTransaction
 } from "firebase/database";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const COLS = [1, 2, 3, 4, 5];
-const ROWS = ["A", "B", "C", "D", "E"];
-const ALL_COORDS = ROWS.flatMap(r => COLS.map(c => `${r}${c}`));
+const ALL_ROWS = ["A", "B", "C", "D", "E", "F", "G"];
+const ALL_COLS = [1, 2, 3, 4, 5, 6, 7];
+
+function getBoardDims(size = 5) {
+  return {
+    ROWS: ALL_ROWS.slice(0, size),
+    COLS: ALL_COLS.slice(0, size),
+    ALL_COORDS: ALL_ROWS.slice(0, size).flatMap(r => ALL_COLS.slice(0, size).map(c => `${r}${c}`)),
+    TOTAL: size * size,
+  };
+}
 
 const WORD_LIST = [
   "AGUA","FUEGO","AIRE","TIERRA","HIELO","ARENA","TORMENTA","BOSQUE","DESIERTO","ISLA",
@@ -29,32 +37,46 @@ const END_MESSAGES = {
     "🏆 ¡Ganaron! ¡Son una máquina!",
     "🏆 ¡Ganaron! ¡Sin errores, increíble!",
     "🏆 ¡Ganaron! ¡Mente colmena activada!",
+    "🏆 ¡Ganaron! ¡No fallaron ni una!",
+    "🏆 ¡Ganaron! ¡Coordinación de otro nivel!",
+    "🏆 ¡Ganaron! ¡Telepáticos!",
   ],
   great: [
     "🎉 ¡Bien jugado! Casi perfectos.",
     "🎉 ¡Muy bien! Pero se puede mejorar.",
     "🎉 ¡Buen equipo! Alguna que otra pifió.",
     "🎉 ¡Sólido! Unos pocos errores nomás.",
+    "🎉 ¡Muy cerca! Le faltó poquito.",
+    "🎉 ¡Buen resultado! Con práctica se llega.",
+    "🎉 ¡Casi! El equipo funcionó bien.",
   ],
   ok: [
     "😅 Falta comunicación.",
     "😅 Se entendieron... más o menos.",
     "😅 Hay que hablar más antes de jugar.",
     "😅 Regular. El chat estaba ahí para algo.",
+    "😅 Ni bien ni mal. Más o menos.",
+    "😅 Se notó la duda en más de una.",
+    "😅 Prometedor pero irregular.",
   ],
   bad: [
     "💀 Horribles. A practicar.",
     "💀 ¿Estaban jugando el mismo juego?",
     "💀 Comunicación = 0.",
     "💀 Esto fue un desastre glorioso.",
+    "💀 No se entendieron ni de casualidad.",
+    "💀 El tablero los comió vivos.",
+    "💀 Hay que volver a la escuela.",
   ],
 };
 
-function getEndMessage(correct) {
+// Umbrales en porcentaje (igual que 5x5: 24/25=96%, 21/25=84%, 16/25=64%)
+function getEndMessage(correct, total) {
+  const pct = correct / total;
   let bucket;
-  if (correct >= 24) bucket = "perfect";
-  else if (correct >= 21) bucket = "great";
-  else if (correct >= 16) bucket = "ok";
+  if (pct >= 0.96) bucket = "perfect";
+  else if (pct >= 0.84) bucket = "great";
+  else if (pct >= 0.64) bucket = "ok";
   else bucket = "bad";
   const opts = END_MESSAGES[bucket];
   return opts[Math.floor(Math.random() * opts.length)];
@@ -116,15 +138,17 @@ function shuffle(arr) {
   return a;
 }
 
-function generateClues() {
-  const words = shuffle(WORD_LIST).slice(0, 10);
+function generateClues(size = 5) {
+  const { ROWS, COLS } = getBoardDims(size);
+  const words = shuffle(WORD_LIST).slice(0, ROWS.length + COLS.length);
   const cols = {}; const rows = {};
   COLS.forEach((c, i) => (cols[c] = words[i]));
-  ROWS.forEach((r, i) => (rows[r] = words[5 + i]));
+  ROWS.forEach((r, i) => (rows[r] = words[COLS.length + i]));
   return { cols, rows };
 }
 
-function pickCoord(usedCoords = []) {
+function pickCoord(usedCoords = [], size = 5) {
+  const { ALL_COORDS } = getBoardDims(size);
   const avail = ALL_COORDS.filter(k => !usedCoords.includes(k));
   if (!avail.length) return null;
   return avail[Math.floor(Math.random() * avail.length)];
@@ -250,6 +274,7 @@ export default function PistasCruzadas() {
   });
   const [myName, setMyName] = useState(() => localStorage.getItem("pc_myName") || "");
   const [screen, setScreen] = useState("menu");
+  const [boardSizeChoice, setBoardSizeChoice] = useState(5);
 
   const [game, setGame]     = useState(null);
   const [roomId, setRoomId] = useState(() => localStorage.getItem("pc_roomId") || "");
@@ -318,9 +343,11 @@ export default function PistasCruzadas() {
   const playerList     = Object.entries(players);
   const resolved       = game?.resolved || {};
   const votes          = game?.votes || {};
+  const boardSize      = game?.boardSize || 5;
+  const { ROWS, COLS, ALL_COORDS, TOTAL } = getBoardDims(boardSize);
   const resolvedCount  = Object.values(resolved).filter(v => v !== "discarded").length;
   const discardedCount = Object.values(resolved).filter(v => v === "discarded").length;
-  const allDone        = Object.keys(resolved).length === 25;
+  const allDone        = Object.keys(resolved).length === TOTAL;
 
   function showToast(msg, type = "info") {
     setToast({ msg, type });
@@ -329,12 +356,13 @@ export default function PistasCruzadas() {
 
   // ── Consensus ─────────────────────────────────────────────────────────────
   async function checkConsensusServer(data, rid) {
-    const { players = {}, votes = {}, resolved = {} } = data;
+    const { players = {}, votes = {}, resolved = {}, boardSize: bs = 5 } = data;
+    const { ALL_COORDS: ac, TOTAL } = getBoardDims(bs);
     const playerIds = Object.keys(players);
     for (const [targetId, voterMap] of Object.entries(votes)) {
       const target = players[targetId];
       if (!target?.wordPublished || !target?.coord) continue;
-      if (resolved[target.coord]) continue;
+      if (resolved[target.coord] !== undefined) continue;
       const voters = playerIds.filter(id => id !== targetId);
       if (voters.length === 0) continue;
       if (!voters.every(id => voterMap[id])) continue;
@@ -343,29 +371,50 @@ export default function PistasCruzadas() {
 
       const guessedCoord = coords[0];
       const correct = guessedCoord === target.coord;
-      // On wrong guess: the REAL coord (target.coord) is lost forever, guessed coord stays free
-      // On correct guess: the guessed coord (= real coord) is completed
-      const coordToResolve = correct ? guessedCoord : target.coord;
-      const usedCoords = [...Object.values(players).map(p => p.coord).filter(Boolean), ...Object.keys(resolved), target.coord];
-      const newCoord = pickCoord(usedCoords);
-      const updates = {};
-      updates[`rooms/${rid}/resolved/${coordToResolve}`] = correct
-        ? { word: target.word, playerName: target.name } : "discarded";
-      updates[`rooms/${rid}/players/${targetId}/coord`]         = newCoord;
-      updates[`rooms/${rid}/players/${targetId}/word`]          = "";
-      updates[`rooms/${rid}/players/${targetId}/wordPublished`] = false;
-      updates[`rooms/${rid}/votes/${targetId}`] = null;
 
-      // On error: only show what was guessed, not the real coord
-      const resultMsg = correct
-        ? `✓ ¡Correcto! ${target.name} estaba en ${guessedCoord}`
-        : `✗ Incorrecto. Dijeron ${guessedCoord} pero no era. La coordenada de ${target.name} se perdió.`;
+      // Usar Transaction para que solo UN cliente procese el consenso
+      const lockRef = ref(db, `rooms/${rid}/resolved/${target.coord}`);
       try {
+        let committed = false;
+        await runTransaction(lockRef, current => {
+          if (current !== null && current !== undefined) { return; } // ya procesado, abortar
+          committed = true;
+          return correct
+            ? { word: target.word, playerName: target.name }
+            : "lost";
+        }).then(result => { committed = result.committed; });
+        if (!committed) continue;
+
+        const usedCoords = [
+          ...Object.values(players).map(p => p.coord).filter(Boolean),
+          ...Object.keys(resolved),
+          target.coord,
+        ];
+        const newCoord = pickCoord(usedCoords, bs);
+        const updates = {};
+        updates[`rooms/${rid}/players/${targetId}/coord`]         = newCoord;
+        updates[`rooms/${rid}/players/${targetId}/word`]          = "";
+        updates[`rooms/${rid}/players/${targetId}/wordPublished`] = false;
+        updates[`rooms/${rid}/votes/${targetId}`]                 = null;
+
+        const resultMsg = correct
+          ? `✓ ¡Correcto! ${target.name} estaba en ${guessedCoord}`
+          : `✗ Incorrecto. Dijeron ${guessedCoord} pero no era. La coordenada de ${target.name} se perdió.`;
+
         await update(ref(db), updates);
         await push(ref(db, `rooms/${rid}/chat`), {
           name: "🎮 Juego", color: correct ? "#00c9a7" : "#e8365d",
           text: resultMsg, ts: Date.now(), system: true,
         });
+
+        // Verificar si el juego terminó y guardar frase final en Firebase
+        const newResolved = { ...resolved, [target.coord]: correct ? { word: target.word, playerName: target.name } : "lost" };
+        if (Object.keys(newResolved).length === TOTAL && !data.endMessage) {
+          const correctCount = Object.values(newResolved).filter(v => v !== "lost").length;
+          const msg = getEndMessage(correctCount, TOTAL);
+          await update(ref(db, `rooms/${rid}`), { endMessage: msg });
+        }
+
         showToast(resultMsg, correct ? "success" : "error");
       } catch (e) { /* otro cliente ya lo procesó */ }
     }
@@ -375,9 +424,9 @@ export default function PistasCruzadas() {
   async function createRoom() {
     const name = myName.trim(); if (!name) return;
     localStorage.setItem("pc_myName", name);
-    const rid = uid6(); const clues = generateClues(); const coord = pickCoord([]);
+    const rid = uid6(); const clues = generateClues(boardSizeChoice); const coord = pickCoord([], boardSizeChoice);
     await set(ref(db, `rooms/${rid}`), {
-      roomId: rid, clues, createdAt: Date.now(),
+      roomId: rid, clues, boardSize: boardSizeChoice, createdAt: Date.now(),
       players: { [myId]: { name, color: PLAYER_COLORS[0], coord, word: "", wordPublished: false } },
       resolved: {}, votes: {}, chat: {},
     });
@@ -416,8 +465,9 @@ export default function PistasCruzadas() {
     }
 
     // Jugador nuevo
+    const bs         = data.boardSize || 5;
     const usedCoords = Object.values(existingPlayers).map(p => p.coord).filter(Boolean);
-    const coord      = pickCoord(usedCoords);
+    const coord      = pickCoord(usedCoords, bs);
     const colorIdx   = Object.keys(existingPlayers).length;
     await update(ref(db, `rooms/${rid}/players/${myId}`), {
       name, color: PLAYER_COLORS[colorIdx % PLAYER_COLORS.length], coord, word: "", wordPublished: false,
@@ -496,6 +546,23 @@ export default function PistasCruzadas() {
           <div className="label" style={{ marginBottom:6 }}>Tu nombre</div>
           <input className="inp" value={myName} onChange={e => setMyName(e.target.value)}
             onKeyDown={e => e.key === "Enter" && createRoom()} placeholder="¿Cómo te llamás?" />
+        </div>
+        <div style={{ marginBottom:18 }}>
+          <div className="label" style={{ marginBottom:8 }}>Tamaño del tablero</div>
+          <div style={{ display:"flex", gap:8 }}>
+            {[5, 6, 7].map(s => (
+              <button key={s} className="btn" onClick={() => setBoardSizeChoice(s)}
+                style={{
+                  flex:1, justifyContent:"center", fontSize:13, padding:"10px 0",
+                  background: boardSizeChoice === s ? C.teal : C.card,
+                  color: boardSizeChoice === s ? "#07090f" : C.grayLt,
+                  border: `1.5px solid ${boardSizeChoice === s ? C.teal : C.border}`,
+                }}>
+                {s}×{s}
+                <span style={{ display:"block", fontSize:9, opacity:.7, marginTop:1 }}>{s*s} casillas</span>
+              </button>
+            ))}
+          </div>
         </div>
         <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
           <button className="btn" onClick={createRoom} disabled={!myName.trim()}
@@ -596,10 +663,10 @@ export default function PistasCruzadas() {
           <div style={{ flex:1 }}>
             <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
               <span className="mono" style={{ fontSize:10, color:C.teal }}>✓ {resolvedCount} correctas</span>
-              <span className="mono" style={{ fontSize:10, color:C.textDim }}>{25-resolvedCount-discardedCount} restantes</span>
+              <span className="mono" style={{ fontSize:10, color:C.textDim }}>{TOTAL-resolvedCount-discardedCount} restantes</span>
             </div>
             <div className="progress-bar">
-              <div className="progress-fill" style={{ width:`${(resolvedCount/25)*100}%`, background:C.teal }} />
+              <div className="progress-fill" style={{ width:`${(resolvedCount/TOTAL)*100}%`, background:C.teal }} />
             </div>
           </div>
           {/* Badge errores — siempre visible, se pone rojo cuando hay errores */}
@@ -616,12 +683,12 @@ export default function PistasCruzadas() {
         {allDone && (
           <div style={{ maxWidth:600, margin:"0 auto 12px", background:"rgba(0,201,167,.1)",
             border:`1px solid ${C.teal}`, borderRadius:12, padding:"18px 22px", textAlign:"center", animation:"popIn .5s" }}>
-            <div style={{ fontSize:36 }}>{ resolvedCount >= 24 ? "🏆" : resolvedCount >= 21 ? "🎉" : resolvedCount >= 16 ? "😅" : "💀" }</div>
+            <div style={{ fontSize:36 }}>{ resolvedCount/TOTAL >= 0.96 ? "🏆" : resolvedCount/TOTAL >= 0.84 ? "🎉" : resolvedCount/TOTAL >= 0.64 ? "😅" : "💀" }</div>
             <p style={{ fontFamily:"'Syne',sans-serif", color:C.teal, fontSize:18, margin:"8px 0 4px", fontWeight:800 }}>
-              {getEndMessage(resolvedCount)}
+              {game.endMessage || "…"}
             </p>
             <p style={{ fontFamily:"'DM Mono',monospace", color:C.grayLt, fontSize:12, margin:0 }}>
-              {resolvedCount} correctas · {discardedCount} errores de 25
+              {resolvedCount} correctas · {discardedCount} errores de {TOTAL}
             </p>
           </div>
         )}
@@ -630,8 +697,8 @@ export default function PistasCruzadas() {
         <div style={{ maxWidth:600, margin:"0 auto", overflowX:"auto" }}>
           <table style={{ borderCollapse:"separate", borderSpacing:3, width:"100%", tableLayout:"fixed" }}>
             <colgroup>
-              <col style={{ width:"18%" }} />
-              {COLS.map(c => <col key={c} style={{ width:"16.4%" }} />)}
+              <col style={{ width:`${Math.round(100/(boardSize+1))}%` }} />
+              {COLS.map(c => <col key={c} style={{ width:`${Math.round(100*boardSize/(boardSize+1)/boardSize)}%` }} />)}
             </colgroup>
             <thead>
               <tr>
@@ -664,8 +731,7 @@ export default function PistasCruzadas() {
                       const key = `${r}${c}`;
                       const val = resolved[key];
                       const isMyCoord  = me?.coord === key;
-                      const isComplete = val && val !== "discarded";
-                      const isDiscard  = val === "discarded";
+                      const isComplete = val && val !== "lost" && val !== "discarded";
                       const voteDots = [];
                       Object.entries(votes).forEach(([, vm]) => {
                         Object.entries(vm || {}).forEach(([vid, coord]) => {
@@ -675,19 +741,16 @@ export default function PistasCruzadas() {
                       return (
                         <td key={c} style={{ padding:0 }}>
                           <div className="board-cell" style={{
-                            background: isComplete ? "rgba(0,201,167,.12)" : isDiscard ? "rgba(255,255,255,.02)" : isMyCoord ? "rgba(245,166,35,.08)" : C.surface,
+                            background: isComplete ? "rgba(0,201,167,.12)" : isMyCoord ? "rgba(245,166,35,.08)" : C.surface,
                             border:`1.5px solid ${isMyCoord && !isComplete ? C.gold : isComplete ? C.teal : C.border}`,
                             animation: isMyCoord && !isComplete ? "glow 2.5s infinite" : "none",
                           }}>
-                            <div className="mono" style={{ fontSize:7, color: isComplete ? C.teal : isDiscard ? C.textDim : isMyCoord ? C.gold : C.textDim }}>{key}</div>
+                            <div className="mono" style={{ fontSize:7, color: isComplete ? C.teal : isMyCoord ? C.gold : C.textDim }}>{key}</div>
                             {isComplete ? (
                               <>
-                                {/* Palabra más grande: 12px */}
                                 <div style={{ fontSize:12, color:C.teal, fontWeight:700, textAlign:"center", wordBreak:"break-all", padding:"0 3px", lineHeight:1.2, marginTop:1 }}>{val.word}</div>
                                 <div style={{ fontSize:7, color:C.textDim, marginTop:1 }}>{val.playerName}</div>
                               </>
-                            ) : isDiscard ? (
-                              <div style={{ fontSize:18, color:"rgba(232,54,93,.4)", fontWeight:800 }}>✗</div>
                             ) : isMyCoord ? (
                               <div style={{ fontSize:20, color:C.gold }}>★</div>
                             ) : voteDots.length > 0 ? (
@@ -781,13 +844,18 @@ export default function PistasCruzadas() {
                   {isGuessing && (
                     <div style={{ paddingLeft:45, paddingBottom:14, animation:"slideDown .2s" }}>
                       <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
-                        <select value={guessRow} onChange={e => setGuessRow(e.target.value)} className="inp" style={{ flex:1, minWidth:110, padding:"8px 10px", fontSize:12 }}>
+                        <select value={guessRow} onChange={e => { setGuessRow(e.target.value); setGuessCol(""); }} className="inp" style={{ flex:1, minWidth:110, padding:"8px 10px", fontSize:12 }}>
                           <option value="">Fila…</option>
                           {ROWS.map(r => <option key={r} value={r}>{r} — {clues.rows[r]}</option>)}
                         </select>
                         <select value={guessCol} onChange={e => setGuessCol(e.target.value)} className="inp" style={{ flex:1, minWidth:110, padding:"8px 10px", fontSize:12 }}>
                           <option value="">Col…</option>
-                          {COLS.map(c => <option key={c} value={c}>{c} — {clues.cols[c]}</option>)}
+                          {COLS.filter(c => {
+                            if (!guessRow) return true;
+                            const coord = `${guessRow}${c}`;
+                            const v = resolved[coord];
+                            return !v || v === "lost" || v === "discarded";
+                          }).map(c => <option key={c} value={c}>{c} — {clues.cols[c]}</option>)}
                         </select>
                         <button className="btn" onClick={castVote} disabled={!guessRow || !guessCol}
                           style={{ background:player.color, color:"#07090f", whiteSpace:"nowrap" }}>Votar {guessRow}{guessCol}</button>
@@ -873,7 +941,7 @@ export default function PistasCruzadas() {
 
         {/* Legend */}
         <div style={{ maxWidth:600, margin:"12px auto 0", display:"flex", gap:16, flexWrap:"wrap" }}>
-          {[{ color:C.gold, label:"★ Mi coordenada" }, { color:C.teal, label:"✓ Completada" }, { color:C.border, label:"✗ Descartada" }]
+          {[{ color:C.gold, label:"★ Mi coordenada" }, { color:C.teal, label:"✓ Completada" }]
             .map(({ color, label }) => (
               <div key={label} style={{ display:"flex", alignItems:"center", gap:5, fontSize:11, color:C.grayLt }}>
                 <div style={{ width:8, height:8, borderRadius:2, background:color }} />{label}
