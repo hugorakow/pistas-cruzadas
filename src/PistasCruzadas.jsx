@@ -273,12 +273,13 @@ export default function PistasCruzadas() {
     const id = uid6(); localStorage.setItem("pc_myId", id); return id;
   });
   const [myName, setMyName] = useState(() => localStorage.getItem("pc_myName") || "");
-  const [screen, setScreen] = useState("menu");
+  const [screen, setScreen] = useState(() => localStorage.getItem("pc_roomId") ? "game" : "menu");
   const [boardSizeChoice, setBoardSizeChoice] = useState(5);
 
   const [game, setGame]     = useState(null);
   const [roomId, setRoomId] = useState(() => localStorage.getItem("pc_roomId") || "");
   const listenerRef         = useRef(null);
+  const isMounted           = useRef(false);
 
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput]       = useState("");
@@ -332,6 +333,7 @@ export default function PistasCruzadas() {
   }, [chatMessages]);
 
   useEffect(() => {
+    if (!isMounted.current) { isMounted.current = true; return; }
     if (roomId) {
       localStorage.setItem("pc_roomId", roomId);
       setScreen("game");
