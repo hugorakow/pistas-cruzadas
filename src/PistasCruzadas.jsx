@@ -28,6 +28,7 @@ const WORD_LIST = [
   "TIEMPO","DINERO","AMOR","MIEDO","SUEÑO","VIDA","SUERTE","IDEA","CAMBIO","PODER",
   "INTERNET","COMPUTADORA","PANTALLA","FOTO","VIDEO","JUEGO","CONTROL","ENERGÍA","MOTOR","MÁQUINA",
   "LUZ","SOMBRA","COLOR","VERDE","ROJO","AZUL","FRÍO","CALOR","RÁPIDO","LENTO",
+  "CARTA","ÁRBOL","MATE","VOLUMEN","ESPEJO","CUADRADO","RUEDA","PINTURA","EXTREMO","IMPORTANTE",
 ];
 
 // ── End game messages ─────────────────────────────────────────────────────────
