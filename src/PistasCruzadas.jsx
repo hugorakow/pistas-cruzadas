@@ -18,17 +18,36 @@ function getBoardDims(size = 5) {
 }
 
 const WORD_LIST = [
+  // Naturaleza
   "AGUA","FUEGO","AIRE","TIERRA","HIELO","ARENA","TORMENTA","BOSQUE","DESIERTO","ISLA",
+  // Lugares
   "CASA","CALLE","CIUDAD","PARQUE","ESCUELA","HOSPITAL","TEATRO","AEROPUERTO","RESTAURANTE","HOTEL",
+  // Objetos
   "MESA","SILLA","PUERTA","VENTANA","LLAVE","RELOJ","TELÉFONO","LIBRO","LÁMPARA","MOCHILA",
+  // Comida
   "PAN","QUESO","LECHE","CARNE","FRUTA","VERDURA","SOPA","CAFÉ","AZÚCAR","CHOCOLATE",
+  // Personas
   "HOMBRE","MUJER","NIÑO","JOVEN","AMIGO","MÉDICO","MAESTRO","POLICÍA","CLIENTE","VECINO",
+  // Animales
   "PERRO","CABALLO","LEÓN","OSO","PEZ","PÁJARO","MONO","SERPIENTE","ELEFANTE","TIBURÓN",
+  // Acciones
   "CORRER","SALTAR","COMER","DORMIR","LEER","ESCRIBIR","MIRAR","ESCUCHAR","PENSAR","VIAJAR",
+  // Conceptos
   "TIEMPO","DINERO","AMOR","MIEDO","SUEÑO","VIDA","SUERTE","IDEA","CAMBIO","PODER",
+  // Tecnología
   "INTERNET","COMPUTADORA","PANTALLA","FOTO","VIDEO","JUEGO","CONTROL","ENERGÍA","MOTOR","MÁQUINA",
+  // Descriptivos
   "LUZ","SOMBRA","COLOR","VERDE","ROJO","AZUL","FRÍO","CALOR","RÁPIDO","LENTO",
+  // Agregadas
   "CARTA","ÁRBOL","MATE","VOLUMEN","ESPEJO","CUADRADO","RUEDA","PINTURA","EXTREMO","IMPORTANTE",
+  // Objetos nuevos
+  "PARAGUAS","TIJERA","BRÚJULA","LINTERNA","CASCO","ANCLA","BUFANDA","MARTILLO","TELESCOPIO","FUSIBLE",
+  // Lugares nuevos
+  "CAVERNA","FARO","MERCADO","CEMENTERIO","CASTILLO","PALACIO","PUERTO","SUBTE","ESTADIO","FÁBRICA",
+  // Conceptos nuevos
+  "SILENCIO","JUSTICIA","MEMORIA","RITMO","FRONTERA","PELIGRO","MISTERIO","VICTORIA","TRADICIÓN","EQUILIBRIO",
+  // Picantes
+  "SEXO","HOMOSEXUAL","PECHO","PITO","COLA","JADEO","ORAL","VIRGEN",
 ];
 
 // ── End game messages ─────────────────────────────────────────────────────────
@@ -348,8 +367,8 @@ export default function PistasCruzadas() {
   const votes          = game?.votes || {};
   const boardSize      = game?.boardSize || 5;
   const { ROWS, COLS, ALL_COORDS, TOTAL } = getBoardDims(boardSize);
-  const resolvedCount  = Object.values(resolved).filter(v => v !== "lost" && v !== "discarded").length;
-  const discardedCount = Object.values(resolved).filter(v => v === "lost" || v === "discarded").length;
+  const resolvedCount  = Object.values(resolved).filter(v => v && typeof v === "object" && !v.lost).length;
+  const discardedCount = Object.values(resolved).filter(v => v && typeof v === "object" && v.lost).length;
   const allDone        = Object.keys(resolved).length === TOTAL;
 
   function showToast(msg, type = "info") {
@@ -384,7 +403,7 @@ export default function PistasCruzadas() {
           committed = true;
           return correct
             ? { word: target.word, playerName: target.name }
-            : "lost";
+            : { word: target.word, playerName: target.name, lost: true };
         }).then(result => { committed = result.committed; });
         if (!committed) continue;
 
@@ -411,9 +430,9 @@ export default function PistasCruzadas() {
         });
 
         // Verificar si el juego terminó y guardar frase final en Firebase
-        const newResolved = { ...resolved, [target.coord]: correct ? { word: target.word, playerName: target.name } : "lost" };
+        const newResolved = { ...resolved, [target.coord]: correct ? { word: target.word, playerName: target.name } : { word: target.word, playerName: target.name, lost: true } };
         if (Object.keys(newResolved).length === TOTAL && !data.endMessage) {
-          const correctCount = Object.values(newResolved).filter(v => v !== "lost").length;
+          const correctCount = Object.values(newResolved).filter(v => v && typeof v === "object" && !v.lost).length;
           const msg = getEndMessage(correctCount, TOTAL);
           await update(ref(db, `rooms/${rid}`), { endMessage: msg });
         }
@@ -498,7 +517,7 @@ export default function PistasCruzadas() {
     // Collect all used words in this game
     const usedWords = [
       ...Object.values(game?.players || {}).map(p => p.word).filter(Boolean),
-      ...Object.values(game?.resolved || {}).filter(v => v !== "discarded").map(v => v.word).filter(Boolean),
+      ...Object.values(game?.resolved || {}).filter(v => v && typeof v === "object").map(v => v.word).filter(Boolean),
     ];
     const error = validateHint(word, game?.clues, me?.coord, usedWords);
     if (error) { setHintError(error); return; }
@@ -734,7 +753,9 @@ export default function PistasCruzadas() {
                       const key = `${r}${c}`;
                       const val = resolved[key];
                       const isMyCoord  = me?.coord === key;
-                      const isComplete = val && val !== "lost" && val !== "discarded";
+                      const isComplete = val && typeof val === "object" && !val.lost;
+                      const isLost     = val && typeof val === "object" && val.lost;
+                      const showLost   = isLost && allDone;
                       const voteDots = [];
                       Object.entries(votes).forEach(([, vm]) => {
                         Object.entries(vm || {}).forEach(([vid, coord]) => {
@@ -744,15 +765,19 @@ export default function PistasCruzadas() {
                       return (
                         <td key={c} style={{ padding:0 }}>
                           <div className="board-cell" style={{
-                            background: isComplete ? "rgba(0,201,167,.12)" : isMyCoord ? "rgba(245,166,35,.08)" : C.surface,
-                            border:`1.5px solid ${isMyCoord && !isComplete ? C.gold : isComplete ? C.teal : C.border}`,
+                            background: isComplete ? "rgba(0,201,167,.12)" : showLost ? "rgba(232,54,93,.12)" : isMyCoord ? "rgba(245,166,35,.08)" : C.surface,
+                            border:`1.5px solid ${isComplete ? C.teal : showLost ? C.red : isMyCoord && !isComplete ? C.gold : C.border}`,
                             animation: isMyCoord && !isComplete ? "glow 2.5s infinite" : "none",
                           }}>
-                            <div className="mono" style={{ fontSize:7, color: isComplete ? C.teal : isMyCoord ? C.gold : C.textDim }}>{key}</div>
                             {isComplete ? (
                               <>
-                                <div style={{ fontSize:12, color:C.teal, fontWeight:700, textAlign:"center", wordBreak:"break-all", padding:"0 3px", lineHeight:1.2, marginTop:1 }}>{val.word}</div>
+                                <div style={{ fontSize:12, color:C.teal, fontWeight:700, textAlign:"center", wordBreak:"break-all", padding:"0 3px", lineHeight:1.2 }}>{val.word}</div>
                                 <div style={{ fontSize:7, color:C.textDim, marginTop:1 }}>{val.playerName}</div>
+                              </>
+                            ) : showLost ? (
+                              <>
+                                <div style={{ fontSize:11, color:C.red, fontWeight:700, textAlign:"center", wordBreak:"break-all", padding:"0 3px", lineHeight:1.2 }}>{val.word}</div>
+                                <div style={{ fontSize:7, color:"rgba(232,54,93,.6)", marginTop:1 }}>{val.playerName}</div>
                               </>
                             ) : isMyCoord ? (
                               <div style={{ fontSize:20, color:C.gold }}>★</div>
@@ -857,7 +882,7 @@ export default function PistasCruzadas() {
                             if (!guessRow) return true;
                             const coord = `${guessRow}${c}`;
                             const v = resolved[coord];
-                            return !v || v === "lost" || v === "discarded";
+                            return !v || v.lost;
                           }).map(c => <option key={c} value={c}>{c} — {clues.cols[c]}</option>)}
                         </select>
                         <button className="btn" onClick={castVote} disabled={!guessRow || !guessCol}
