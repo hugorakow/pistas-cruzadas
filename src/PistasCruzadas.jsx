@@ -347,8 +347,8 @@ export default function PistasCruzadas() {
   const votes          = game?.votes || {};
   const boardSize      = game?.boardSize || 5;
   const { ROWS, COLS, ALL_COORDS, TOTAL } = getBoardDims(boardSize);
-  const resolvedCount  = Object.values(resolved).filter(v => v !== "discarded").length;
-  const discardedCount = Object.values(resolved).filter(v => v === "discarded").length;
+  const resolvedCount  = Object.values(resolved).filter(v => v !== "lost" && v !== "discarded").length;
+  const discardedCount = Object.values(resolved).filter(v => v === "lost" || v === "discarded").length;
   const allDone        = Object.keys(resolved).length === TOTAL;
 
   function showToast(msg, type = "info") {
