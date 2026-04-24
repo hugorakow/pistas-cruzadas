@@ -471,16 +471,17 @@ export default function PistasCruzadas() {
     const existingByName = Object.entries(existingPlayers).find(([, p]) => p.name?.toLowerCase() === name.toLowerCase());
 
     if (existingById) {
-      // Mismo dispositivo, mismo ID → entrar directo sin modificar nada
+      // Mismo dispositivo, mismo ID → limpiar offline y entrar
+      await update(ref(db, `rooms/${rid}/players/${myId}`), { offline: false });
       setRoomId(rid); setJoinInput(""); setJoinError(""); setScreen("game");
       return;
     }
 
     if (existingByName) {
-      // Mismo nombre desde otro dispositivo → adoptar ese ID
+      // Mismo nombre desde otro dispositivo → adoptar ese ID y limpiar offline
       const [existingId] = existingByName;
       localStorage.setItem("pc_myId", existingId);
-      // No podemos mutar myId (es const del useState), recargamos con el nuevo ID guardado
+      await update(ref(db, `rooms/${rid}/players/${existingId}`), { offline: false });
       setRoomId(rid); setJoinInput(""); setJoinError("");
       window.location.reload(); // recarga con el localStorage actualizado
       return;
@@ -500,11 +501,21 @@ export default function PistasCruzadas() {
     setRoomId(rid); setJoinInput(""); setJoinError(""); setScreen("game");
   }
 
-  // ── Leave room ────────────────────────────────────────────────────────────
-  function leaveRoom() {
+  // ── Leave room (soft — keeps player in Firebase, can rejoin) ─────────────
+  async function leaveRoom() {
     if (roomId && myId) {
-      set(ref(db, `rooms/${roomId}/players/${myId}`), null);
-      set(ref(db, `rooms/${roomId}/votes/${myId}`), null);
+      await update(ref(db, `rooms/${roomId}/players/${myId}`), { offline: true });
+    }
+    setRoomId(""); setGame(null); setScreen("menu");
+    localStorage.removeItem("pc_roomId");
+  }
+
+  // ── Abandon room (hard — deletes player permanently) ─────────────────────
+  async function abandonRoom() {
+    if (!window.confirm("¿Abandonar la partida definitivamente? No podrás volver a unirte con este jugador.")) return;
+    if (roomId && myId) {
+      await set(ref(db, `rooms/${roomId}/players/${myId}`), null);
+      await set(ref(db, `rooms/${roomId}/votes/${myId}`), null);
     }
     setRoomId(""); setGame(null); setScreen("menu");
     localStorage.removeItem("pc_roomId");
@@ -677,6 +688,8 @@ export default function PistasCruzadas() {
               style={{ background:C.card, color:C.gold, border:`1px solid ${C.border}`, fontSize:11 }}>📋 {roomId}</button>
             <button className="btn" onClick={leaveRoom}
               style={{ background:C.card, color:C.grayLt, border:`1px solid ${C.border}`, fontSize:11 }}>Salir</button>
+            <button className="btn" onClick={abandonRoom}
+              style={{ background:"rgba(232,54,93,.12)", color:C.red, border:`1px solid rgba(232,54,93,.35)`, fontSize:11 }}>Abandonar</button>
           </div>
         </div>
 
