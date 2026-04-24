@@ -176,7 +176,12 @@ function formatTime(ts) {
 
 // ── CSS ───────────────────────────────────────────────────────────────────────
 const CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Mono:ital,wght@0,400;0,500;1,400&family=Figtree:wght@400;500;600;700&display=swap');
+  /* Fuentes del sistema — sin depender de Google Fonts */
+  :root {
+    --font-title:  'Arial Black', 'Arial Bold', Gadget, sans-serif;
+    --font-mono:   'Courier New', Courier, monospace;
+    --font-body:   system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
 
   @keyframes fadeUp    { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
   @keyframes pulse     { 0%,100%{opacity:1} 50%{opacity:.45} }
@@ -193,7 +198,7 @@ const CSS = `
   ::-webkit-scrollbar-thumb { background: #1a2535; border-radius: 2px; }
 
   .btn {
-    font-family: 'Figtree', sans-serif; font-weight: 600; font-size: 13px;
+    font-family: var(--font-body); font-weight: 600; font-size: 13px;
     border: none; border-radius: 8px; cursor: pointer; letter-spacing: .2px;
     padding: 9px 18px; transition: filter .15s, transform .15s;
     display: inline-flex; align-items: center; gap: 6px;
@@ -203,7 +208,7 @@ const CSS = `
   .btn:not(:disabled):active { transform: translateY(0px); }
 
   .inp {
-    font-family: 'Figtree', sans-serif; font-size: 14px; width: 100%;
+    font-family: var(--font-body); font-size: 14px; width: 100%;
     background: #0c1018; border: 1.5px solid #1a2535; border-radius: 8px;
     color: #d8eaf8; padding: 10px 14px; outline: none; transition: border-color .2s;
   }
@@ -211,8 +216,8 @@ const CSS = `
   .inp::placeholder { color: #1e3048; }
 
   .card { background: #111720; border: 1px solid #1a2535; border-radius: 14px; }
-  .mono { font-family: 'DM Mono', monospace; }
-  .label { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 2px; color: #6a8aaa; text-transform: uppercase; }
+  .mono { font-family: var(--font-mono); }
+  .label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2px; color: #6a8aaa; text-transform: uppercase; }
 
   .player-row {
     display: flex; align-items: flex-start; gap: 11px;
@@ -224,7 +229,7 @@ const CSS = `
   .player-row.voting { border-color: #f5a623 !important; background: rgba(245,166,35,.05) !important; }
 
   .vote-pill {
-    font-family: 'DM Mono', monospace; font-size: 11px; font-weight: 500;
+    font-family: var(--font-mono); font-size: 11px; font-weight: 500;
     padding: 3px 9px; border-radius: 20px; display: inline-flex; align-items: center;
     gap: 5px; border: 1px solid transparent; transition: all .18s;
   }
@@ -254,7 +259,7 @@ const CSS = `
     display: inline-flex; align-items: center; gap: 5px;
     background: rgba(232,54,93,.15); border: 1.5px solid rgba(232,54,93,.45);
     color: #e8365d; border-radius: 8px; padding: 4px 12px;
-    font-family: 'Syne', sans-serif; font-weight: 800; font-size: 16px;
+    font-family: var(--font-title); font-weight: 800; font-size: 16px;
     flex-shrink: 0;
   }
 
@@ -266,7 +271,7 @@ const CSS = `
   .chat-msg { animation: msgIn .2s ease; }
   .chat-input-row { display: flex; gap: 8px; padding: 10px 16px; border-top: 1px solid #1a2535; }
   .chat-inp {
-    font-family: 'Figtree', sans-serif; font-size: 13px; flex: 1;
+    font-family: var(--font-body); font-size: 13px; flex: 1;
     background: #0c1018; border: 1.5px solid #1a2535; border-radius: 8px;
     color: #d8eaf8; padding: 8px 12px; outline: none; transition: border-color .2s;
   }
@@ -462,18 +467,19 @@ export default function PistasCruzadas() {
     const existingByName = Object.entries(existingPlayers).find(([, p]) => p.name?.toLowerCase() === name.toLowerCase());
 
     if (existingById) {
-      // Mismo dispositivo, mismo ID → entrar directo sin modificar nada
+      // Mismo dispositivo, mismo ID → limpiar offline y entrar
+      await update(ref(db, `rooms/${rid}/players/${myId}`), { offline: false });
       setRoomId(rid); setJoinInput(""); setJoinError(""); setScreen("game");
       return;
     }
 
     if (existingByName) {
-      // Mismo nombre desde otro dispositivo → adoptar ese ID
+      // Mismo nombre desde otro dispositivo → adoptar ese ID y limpiar offline
       const [existingId] = existingByName;
       localStorage.setItem("pc_myId", existingId);
-      // No podemos mutar myId (es const del useState), recargamos con el nuevo ID guardado
+      await update(ref(db, `rooms/${rid}/players/${existingId}`), { offline: false });
       setRoomId(rid); setJoinInput(""); setJoinError("");
-      window.location.reload(); // recarga con el localStorage actualizado
+      window.location.reload();
       return;
     }
 
@@ -491,11 +497,21 @@ export default function PistasCruzadas() {
     setRoomId(rid); setJoinInput(""); setJoinError(""); setScreen("game");
   }
 
-  // ── Leave room ────────────────────────────────────────────────────────────
-  function leaveRoom() {
+  // ── Leave room (soft — keeps player in Firebase, can rejoin) ─────────────
+  async function leaveRoom() {
     if (roomId && myId) {
-      set(ref(db, `rooms/${roomId}/players/${myId}`), null);
-      set(ref(db, `rooms/${roomId}/votes/${myId}`), null);
+      await update(ref(db, `rooms/${roomId}/players/${myId}`), { offline: true });
+    }
+    setRoomId(""); setGame(null); setScreen("menu");
+    localStorage.removeItem("pc_roomId");
+  }
+
+  // ── Abandon room (hard — deletes player permanently) ─────────────────────
+  async function abandonRoom() {
+    if (!window.confirm("¿Abandonar la partida definitivamente? No podrás volver a unirte con este jugador.")) return;
+    if (roomId && myId) {
+      await set(ref(db, `rooms/${roomId}/players/${myId}`), null);
+      await set(ref(db, `rooms/${roomId}/votes/${myId}`), null);
     }
     setRoomId(""); setGame(null); setScreen("menu");
     localStorage.removeItem("pc_roomId");
@@ -546,12 +562,12 @@ export default function PistasCruzadas() {
       <div style={{ maxWidth:360, width:"100%", animation:"fadeUp .5s ease" }}>
         <div style={{ textAlign:"center", marginBottom:44 }}>
           <div className="label" style={{ marginBottom:14 }}>COOPERATIVO · MULTIJUGADOR · TIEMPO REAL</div>
-          <div style={{ fontFamily:"'Syne',sans-serif", fontSize:56, fontWeight:800, lineHeight:.95, color:C.text }}>PISTAS</div>
-          <div style={{ fontFamily:"'Syne',sans-serif", fontSize:56, fontWeight:800, lineHeight:.95,
+          <div style={{ fontFamily:"var(--font-title)", fontSize:56, fontWeight:800, lineHeight:.95, color:C.text }}>PISTAS</div>
+          <div style={{ fontFamily:"var(--font-title)", fontSize:56, fontWeight:800, lineHeight:.95,
             background:`linear-gradient(100deg,${C.teal},${C.gold})`, WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent" }}>
             CRUZADAS
           </div>
-          <div style={{ marginTop:12, fontFamily:"'DM Mono',monospace", fontSize:11, color:C.tealDim }}>
+          <div style={{ marginTop:12, fontFamily:"var(--font-mono)", fontSize:11, color:C.tealDim }}>
             <span className="dot-live" />en vivo vía Firebase
           </div>
         </div>
@@ -587,7 +603,7 @@ export default function PistasCruzadas() {
             → Unirse con código
           </button>
         </div>
-        <p style={{ fontFamily:"'Figtree',sans-serif", color:C.textDim, fontSize:12, marginTop:30, lineHeight:2, textAlign:"center" }}>
+        <p style={{ fontFamily:"var(--font-body)", color:C.textDim, fontSize:12, marginTop:30, lineHeight:2, textAlign:"center" }}>
           Coordinada secreta por jugador · Palabra pista visible para todos<br/>
           Todos votan · Consenso = resultado instantáneo
         </p>
@@ -599,7 +615,7 @@ export default function PistasCruzadas() {
     <div style={{ minHeight:"100vh", background:C.bg, display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
       <style>{CSS}</style>
       <div className="card" style={{ maxWidth:400, width:"100%", padding:28, animation:"fadeUp .4s" }}>
-        <div style={{ fontFamily:"'Syne',sans-serif", color:C.text, fontSize:22, fontWeight:800, marginBottom:20 }}>Unirse a sala</div>
+        <div style={{ fontFamily:"var(--font-title)", color:C.text, fontSize:22, fontWeight:800, marginBottom:20 }}>Unirse a sala</div>
         <div style={{ marginBottom:14 }}>
           <div className="label" style={{ marginBottom:6 }}>Tu nombre</div>
           <input className="inp" value={myName} onChange={e => setMyName(e.target.value)} placeholder="Tu nombre" />
@@ -610,7 +626,7 @@ export default function PistasCruzadas() {
             onKeyDown={e => e.key === "Enter" && joinRoom()}
             placeholder="ej: AB12CD" maxLength={6} style={{ fontSize:22, letterSpacing:6, textAlign:"center" }} />
         </div>
-        {joinError && <p style={{ color:C.red, fontSize:12, marginTop:6, fontFamily:"'Figtree',sans-serif" }}>{joinError}</p>}
+        {joinError && <p style={{ color:C.red, fontSize:12, marginTop:6, fontFamily:"var(--font-body)" }}>{joinError}</p>}
         <div style={{ display:"flex", gap:10, marginTop:18 }}>
           <button className="btn" onClick={joinRoom} disabled={!myName.trim() || !joinInput.trim()}
             style={{ background:C.teal, color:"#07090f", flex:1, justifyContent:"center" }}>Unirse</button>
@@ -624,7 +640,7 @@ export default function PistasCruzadas() {
   if (screen === "game" && connecting) return (
     <div style={{ minHeight:"100vh", background:C.bg, display:"flex", alignItems:"center", justifyContent:"center" }}>
       <style>{CSS}</style>
-      <div style={{ textAlign:"center", color:C.grayLt, fontFamily:"'DM Mono',monospace", fontSize:13 }}>
+      <div style={{ textAlign:"center", color:C.grayLt, fontFamily:"var(--font-mono)", fontSize:13 }}>
         <div style={{ fontSize:32, marginBottom:12, animation:"pulse 1.5s infinite" }}>⬡</div>
         Conectando…
       </div>
@@ -637,7 +653,7 @@ export default function PistasCruzadas() {
     const myCol = me?.coord?.[1];
 
     return (
-      <div style={{ minHeight:"100vh", background:C.bg, padding:"10px 8px 56px", fontFamily:"'Figtree',sans-serif" }}>
+      <div style={{ minHeight:"100vh", background:C.bg, padding:"10px 8px 56px", fontFamily:"var(--font-body)" }}>
         <style>{CSS}</style>
 
         {/* Toast */}
@@ -656,7 +672,7 @@ export default function PistasCruzadas() {
         {/* Header */}
         <div style={{ maxWidth:600, margin:"0 auto 10px", display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8 }}>
           <div>
-            <div style={{ fontFamily:"'Syne',sans-serif", fontSize:17, fontWeight:800, color:C.text, lineHeight:1 }}>
+            <div style={{ fontFamily:"var(--font-title)", fontSize:17, fontWeight:800, color:C.text, lineHeight:1 }}>
               PISTAS <span style={{ color:C.teal }}>CRUZADAS</span>
             </div>
             <div className="mono" style={{ fontSize:10, color:C.grayLt, marginTop:3 }}>
@@ -668,6 +684,8 @@ export default function PistasCruzadas() {
               style={{ background:C.card, color:C.gold, border:`1px solid ${C.border}`, fontSize:11 }}>📋 {roomId}</button>
             <button className="btn" onClick={leaveRoom}
               style={{ background:C.card, color:C.grayLt, border:`1px solid ${C.border}`, fontSize:11 }}>Salir</button>
+            <button className="btn" onClick={abandonRoom}
+              style={{ background:"rgba(232,54,93,.12)", color:C.red, border:`1px solid rgba(232,54,93,.35)`, fontSize:11 }}>Abandonar</button>
           </div>
         </div>
 
@@ -697,10 +715,10 @@ export default function PistasCruzadas() {
           <div style={{ maxWidth:600, margin:"0 auto 12px", background:"rgba(0,201,167,.1)",
             border:`1px solid ${C.teal}`, borderRadius:12, padding:"18px 22px", textAlign:"center", animation:"popIn .5s" }}>
             <div style={{ fontSize:36 }}>{ resolvedCount/TOTAL >= 0.96 ? "🏆" : resolvedCount/TOTAL >= 0.84 ? "🎉" : resolvedCount/TOTAL >= 0.64 ? "😅" : "💀" }</div>
-            <p style={{ fontFamily:"'Syne',sans-serif", color:C.teal, fontSize:18, margin:"8px 0 4px", fontWeight:800 }}>
+            <p style={{ fontFamily:"var(--font-title)", color:C.teal, fontSize:18, margin:"8px 0 4px", fontWeight:800 }}>
               {game.endMessage || "…"}
             </p>
-            <p style={{ fontFamily:"'DM Mono',monospace", color:C.grayLt, fontSize:12, margin:0 }}>
+            <p style={{ fontFamily:"var(--font-mono)", color:C.grayLt, fontSize:12, margin:0 }}>
               {resolvedCount} correctas · {discardedCount} errores de {TOTAL}
             </p>
           </div>
@@ -721,8 +739,8 @@ export default function PistasCruzadas() {
                   return (
                     <th key={c} style={{ padding:0, fontWeight:"normal" }}>
                       <div style={{ background: isHit ? C.gold : C.card, border:`1px solid ${isHit ? C.gold : C.border}`, borderRadius:7, padding:"5px 2px", textAlign:"center", transition:"all .3s" }}>
-                        <div style={{ fontFamily:"'Syne',sans-serif", color: isHit ? C.bg : C.teal, fontSize:14, fontWeight:800 }}>{c}</div>
-                        <div style={{ color: isHit ? "rgba(0,0,0,.5)" : C.textDim, fontSize:8, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", padding:"0 2px" }}>{clues.cols[c]}</div>
+                        <div style={{ fontFamily:"var(--font-title)", color: isHit ? C.bg : C.teal, fontSize:14, fontWeight:800 }}>{c}</div>
+                        <div style={{ color: isHit ? "rgba(0,0,0,.5)" : "rgba(255,255,255,.75)", fontSize:8, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", padding:"0 2px" }}>{clues.cols[c]}</div>
                       </div>
                     </th>
                   );
@@ -736,7 +754,7 @@ export default function PistasCruzadas() {
                   <tr key={r}>
                     <td style={{ padding:0 }}>
                       <div style={{ background: isHit ? C.red : C.card, border:`1px solid ${isHit ? C.red : C.border}`, borderRadius:7, padding:"5px 4px", textAlign:"center", transition:"all .3s" }}>
-                        <div style={{ fontFamily:"'Syne',sans-serif", color:"white", fontSize:14, fontWeight:800 }}>{r}</div>
+                        <div style={{ fontFamily:"var(--font-title)", color:"white", fontSize:14, fontWeight:800 }}>{r}</div>
                         <div style={{ color:"rgba(255,255,255,.4)", fontSize:8, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{clues.rows[r]}</div>
                       </div>
                     </td>
@@ -794,7 +812,7 @@ export default function PistasCruzadas() {
         <div className="card" style={{ maxWidth:600, margin:"14px auto 0" }}>
           <div style={{ padding:"14px 16px 4px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
             <div className="label">Jugadores · {playerList.length}</div>
-            <div style={{ fontSize:11, color:C.teal, fontFamily:"'DM Mono',monospace" }}><span className="dot-live" />en vivo</div>
+            <div style={{ fontSize:11, color:C.teal, fontFamily:"var(--font-mono)" }}><span className="dot-live" />en vivo</div>
           </div>
 
           {playerList.map(([pid, player], idx) => {
@@ -815,15 +833,15 @@ export default function PistasCruzadas() {
                   <div className={`player-row${canVote ? " clickable" : ""}${isGuessing ? " voting" : ""}`}
                     onClick={() => { if (!canVote) return; setGuessTarget(isGuessing ? null : pid); setGuessRow(""); setGuessCol(""); }}>
                     <div style={{ width:34, height:34, borderRadius:"50%", flexShrink:0, background:`${player.color}1a`, border:`2px solid ${player.color}`,
-                      display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'Syne',sans-serif", fontSize:14, fontWeight:800, color:player.color }}>
+                      display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"var(--font-title)", fontSize:14, fontWeight:800, color:player.color }}>
                       {player.name[0]?.toUpperCase()}
                     </div>
                     <div style={{ flex:1, minWidth:0 }}>
                       <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap", marginBottom:2 }}>
                         <span style={{ fontWeight:700, fontSize:13, color: isMe ? player.color : C.text }}>{player.name}</span>
-                        {isMe && <span style={{ fontFamily:"'DM Mono',monospace", fontSize:9, background:`${C.teal}1a`, color:C.teal, padding:"2px 7px", borderRadius:4 }}>YO</span>}
+                        {isMe && <span style={{ fontFamily:"var(--font-mono)", fontSize:9, background:`${C.teal}1a`, color:C.teal, padding:"2px 7px", borderRadius:4 }}>YO</span>}
                         {player.wordPublished
-                          ? <span style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:15, color:player.color, background:`${player.color}15`, padding:"2px 10px", borderRadius:6 }}>{player.word}</span>
+                          ? <span style={{ fontFamily:"var(--font-title)", fontWeight:800, fontSize:15, color:player.color, background:`${player.color}15`, padding:"2px 10px", borderRadius:6 }}>{player.word}</span>
                           : player.coord
                             ? <span style={{ fontSize:11, color:C.textDim, fontStyle:"italic" }}>pensando…</span>
                             : <span style={{ fontSize:11, color:C.textDim }}>sin coord.</span>
@@ -900,7 +918,7 @@ export default function PistasCruzadas() {
                   placeholder="Tu palabra pista…" style={{ flex:1, fontSize:15 }} />
                 <button className="btn" onClick={publishWord} disabled={!myWordInput.trim()} style={{ background:C.teal, color:"#07090f" }}>Publicar</button>
               </div>
-              {hintError && <div style={{ fontSize:12, color:C.red, marginTop:6, fontFamily:"'Figtree',sans-serif" }}>⚠ {hintError}</div>}
+              {hintError && <div style={{ fontSize:12, color:C.red, marginTop:6, fontFamily:"var(--font-body)" }}>⚠ {hintError}</div>}
             </div>
           )}
         </div>
@@ -909,7 +927,7 @@ export default function PistasCruzadas() {
         <div className="card" style={{ maxWidth:600, margin:"12px auto 0" }}>
           <div style={{ padding:"12px 16px 8px", borderBottom:`1px solid ${C.border}`, display:"flex", alignItems:"center", gap:8 }}>
             <div className="label">💬 Chat</div>
-            <span style={{ fontSize:10, color:C.textDim, fontFamily:"'DM Mono',monospace" }}>{chatMessages.filter(m => !m.system).length} mensajes</span>
+            <span style={{ fontSize:10, color:C.textDim, fontFamily:"var(--font-mono)" }}>{chatMessages.filter(m => !m.system).length} mensajes</span>
           </div>
 
           <div className="chat-messages">
@@ -923,7 +941,7 @@ export default function PistasCruzadas() {
                 {msg.system ? (
                   <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                     <div style={{ height:1, flex:1, background:C.border }} />
-                    <span style={{ fontSize:11, color:msg.color, fontFamily:"'DM Mono',monospace", whiteSpace:"nowrap" }}>{msg.text}</span>
+                    <span style={{ fontSize:11, color:msg.color, fontFamily:"var(--font-mono)", whiteSpace:"nowrap" }}>{msg.text}</span>
                     <div style={{ height:1, flex:1, background:C.border }} />
                   </div>
                 ) : (
@@ -931,13 +949,13 @@ export default function PistasCruzadas() {
                     <div style={{ width:28, height:28, borderRadius:"50%", flexShrink:0,
                       background:`${msg.color}1a`, border:`1.5px solid ${msg.color}`,
                       display:"flex", alignItems:"center", justifyContent:"center",
-                      fontFamily:"'Syne',sans-serif", fontSize:12, fontWeight:800, color:msg.color }}>
+                      fontFamily:"var(--font-title)", fontSize:12, fontWeight:800, color:msg.color }}>
                       {msg.name[0]?.toUpperCase()}
                     </div>
                     <div style={{ flex:1 }}>
                       <div style={{ display:"flex", alignItems:"baseline", gap:6, marginBottom:2 }}>
                         <span style={{ fontSize:12, fontWeight:700, color:msg.color }}>{msg.name}</span>
-                        <span style={{ fontSize:10, color:C.textDim, fontFamily:"'DM Mono',monospace" }}>{formatTime(msg.ts)}</span>
+                        <span style={{ fontSize:10, color:C.textDim, fontFamily:"var(--font-mono)" }}>{formatTime(msg.ts)}</span>
                       </div>
                       <div style={{ fontSize:13, color:C.text, lineHeight:1.45, wordBreak:"break-word" }}>{msg.text}</div>
                     </div>
