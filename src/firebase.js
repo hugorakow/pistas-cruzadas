@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getDatabase } from "firebase/database";
+import { getDatabase, goOnline } from "firebase/database";
 
 const firebaseConfig = {
   apiKey:            "AIzaSyA4OfoAKl-L--003GDsWKtu09H34H_dcn0",
@@ -13,3 +13,4 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 export const db = getDatabase(app);
+goOnline(db); // fuerza conexión en tiempo real, evita caché offline en Android
