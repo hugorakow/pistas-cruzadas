@@ -17,38 +17,26 @@ function getBoardDims(size = 5) {
   };
 }
 
-const WORD_LIST = [
-  // Naturaleza
-  "AGUA","FUEGO","AIRE","TIERRA","HIELO","ARENA","TORMENTA","BOSQUE","DESIERTO","ISLA",
-  // Lugares
-  "CASA","CALLE","CIUDAD","PARQUE","ESCUELA","HOSPITAL","TEATRO","AEROPUERTO","RESTAURANTE","HOTEL",
-  // Objetos
-  "MESA","SILLA","PUERTA","VENTANA","LLAVE","RELOJ","TELÉFONO","LIBRO","LÁMPARA","MOCHILA",
-  // Comida
-  "PAN","QUESO","LECHE","CARNE","FRUTA","VERDURA","SOPA","CAFÉ","AZÚCAR","CHOCOLATE",
-  // Personas
-  "HOMBRE","MUJER","NIÑO","JOVEN","AMIGO","MÉDICO","MAESTRO","POLICÍA","CLIENTE","VECINO",
-  // Animales
-  "PERRO","CABALLO","LEÓN","OSO","PEZ","PÁJARO","MONO","SERPIENTE","ELEFANTE","TIBURÓN",
-  // Acciones
-  "CORRER","SALTAR","COMER","DORMIR","LEER","ESCRIBIR","MIRAR","ESCUCHAR","PENSAR","VIAJAR",
-  // Conceptos
-  "TIEMPO","DINERO","AMOR","MIEDO","SUEÑO","VIDA","SUERTE","IDEA","CAMBIO","PODER",
-  // Tecnología
-  "INTERNET","COMPUTADORA","PANTALLA","FOTO","VIDEO","JUEGO","CONTROL","ENERGÍA","MOTOR","MÁQUINA",
-  // Descriptivos
-  "LUZ","SOMBRA","COLOR","VERDE","ROJO","AZUL","FRÍO","CALOR","RÁPIDO","LENTO",
-  // Agregadas
-  "CARTA","ÁRBOL","MATE","VOLUMEN","ESPEJO","CUADRADO","RUEDA","PINTURA","EXTREMO","IMPORTANTE",
-  // Objetos nuevos
-  "PARAGUAS","TIJERA","BRÚJULA","LINTERNA","CASCO","ANCLA","BUFANDA","MARTILLO","TELESCOPIO","FUSIBLE",
-  // Lugares nuevos
-  "CAVERNA","FARO","MERCADO","CEMENTERIO","CASTILLO","PALACIO","PUERTO","SUBTE","ESTADIO","FÁBRICA",
-  // Conceptos nuevos
-  "SILENCIO","JUSTICIA","MEMORIA","RITMO","FRONTERA","PELIGRO","MISTERIO","VICTORIA","TRADICIÓN","EQUILIBRIO",
-  // Picantes
-  "SEXO","HOMOSEXUAL","PECHO","PITO","COLA","JADEO","ORAL","VIRGEN",
+const CATEGORIES = [
+  ["AGUA","FUEGO","AIRE","TIERRA","HIELO","ARENA","TORMENTA","BOSQUE","DESIERTO","ISLA"],
+  ["CASA","CALLE","CIUDAD","PARQUE","ESCUELA","HOSPITAL","TEATRO","AEROPUERTO","RESTAURANTE","HOTEL"],
+  ["MESA","SILLA","PUERTA","VENTANA","LLAVE","RELOJ","TELÉFONO","LIBRO","LÁMPARA","MOCHILA"],
+  ["PAN","QUESO","LECHE","CARNE","FRUTA","VERDURA","SOPA","CAFÉ","AZÚCAR","CHOCOLATE"],
+  ["HOMBRE","MUJER","NIÑO","JOVEN","AMIGO","MÉDICO","MAESTRO","POLICÍA","CLIENTE","VECINO"],
+  ["PERRO","CABALLO","LEÓN","OSO","PEZ","PÁJARO","MONO","SERPIENTE","ELEFANTE","TIBURÓN"],
+  ["CORRER","SALTAR","COMER","DORMIR","LEER","ESCRIBIR","MIRAR","ESCUCHAR","PENSAR","VIAJAR"],
+  ["TIEMPO","DINERO","AMOR","MIEDO","SUEÑO","VIDA","SUERTE","IDEA","CAMBIO","PODER"],
+  ["INTERNET","COMPUTADORA","PANTALLA","FOTO","VIDEO","JUEGO","CONTROL","ENERGÍA","MOTOR","MÁQUINA"],
+  ["LUZ","SOMBRA","COLOR","VERDE","ROJO","AZUL","FRÍO","CALOR","RÁPIDO","LENTO"],
+  ["CARTA","ÁRBOL","MATE","VOLUMEN","ESPEJO","CUADRADO","RUEDA","PINTURA","EXTREMO","IMPORTANTE"],
+  ["PARAGUAS","TIJERA","BRÚJULA","LINTERNA","CASCO","ANCLA","BUFANDA","MARTILLO","TELESCOPIO","FUSIBLE"],
+  ["CAVERNA","FARO","MERCADO","CEMENTERIO","CASTILLO","PALACIO","PUERTO","SUBTE","ESTADIO","FÁBRICA"],
+  ["SILENCIO","JUSTICIA","MEMORIA","RITMO","FRONTERA","PELIGRO","MISTERIO","VICTORIA","TRADICIÓN","EQUILIBRIO"],
+  ["SEXO","HOMOSEXUAL","PECHO","PITO","COLA","JADEO","ORAL","VIRGEN"],
 ];
+
+// Lista plana para validación de pistas
+const WORD_LIST = CATEGORIES.flat();
 
 // ── End game messages ─────────────────────────────────────────────────────────
 const END_MESSAGES = {
@@ -160,7 +148,10 @@ function shuffle(arr) {
 
 function generateClues(size = 5) {
   const { ROWS, COLS } = getBoardDims(size);
-  const words = shuffle(WORD_LIST).slice(0, ROWS.length + COLS.length);
+  const needed = ROWS.length + COLS.length; // max 14 para 7x7, tenemos 15 categorías
+  // Shufflear categorías y tomar una palabra al azar de cada una
+  const shuffledCats = shuffle([...CATEGORIES]).slice(0, needed);
+  const words = shuffledCats.map(cat => cat[Math.floor(Math.random() * cat.length)]);
   const cols = {}; const rows = {};
   COLS.forEach((c, i) => (cols[c] = words[i]));
   ROWS.forEach((r, i) => (rows[r] = words[COLS.length + i]));
@@ -471,17 +462,16 @@ export default function PistasCruzadas() {
     const existingByName = Object.entries(existingPlayers).find(([, p]) => p.name?.toLowerCase() === name.toLowerCase());
 
     if (existingById) {
-      // Mismo dispositivo, mismo ID → limpiar offline y entrar
-      await update(ref(db, `rooms/${rid}/players/${myId}`), { offline: false });
+      // Mismo dispositivo, mismo ID → entrar directo sin modificar nada
       setRoomId(rid); setJoinInput(""); setJoinError(""); setScreen("game");
       return;
     }
 
     if (existingByName) {
-      // Mismo nombre desde otro dispositivo → adoptar ese ID y limpiar offline
+      // Mismo nombre desde otro dispositivo → adoptar ese ID
       const [existingId] = existingByName;
       localStorage.setItem("pc_myId", existingId);
-      await update(ref(db, `rooms/${rid}/players/${existingId}`), { offline: false });
+      // No podemos mutar myId (es const del useState), recargamos con el nuevo ID guardado
       setRoomId(rid); setJoinInput(""); setJoinError("");
       window.location.reload(); // recarga con el localStorage actualizado
       return;
@@ -501,21 +491,11 @@ export default function PistasCruzadas() {
     setRoomId(rid); setJoinInput(""); setJoinError(""); setScreen("game");
   }
 
-  // ── Leave room (soft — keeps player in Firebase, can rejoin) ─────────────
-  async function leaveRoom() {
+  // ── Leave room ────────────────────────────────────────────────────────────
+  function leaveRoom() {
     if (roomId && myId) {
-      await update(ref(db, `rooms/${roomId}/players/${myId}`), { offline: true });
-    }
-    setRoomId(""); setGame(null); setScreen("menu");
-    localStorage.removeItem("pc_roomId");
-  }
-
-  // ── Abandon room (hard — deletes player permanently) ─────────────────────
-  async function abandonRoom() {
-    if (!window.confirm("¿Abandonar la partida definitivamente? No podrás volver a unirte con este jugador.")) return;
-    if (roomId && myId) {
-      await set(ref(db, `rooms/${roomId}/players/${myId}`), null);
-      await set(ref(db, `rooms/${roomId}/votes/${myId}`), null);
+      set(ref(db, `rooms/${roomId}/players/${myId}`), null);
+      set(ref(db, `rooms/${roomId}/votes/${myId}`), null);
     }
     setRoomId(""); setGame(null); setScreen("menu");
     localStorage.removeItem("pc_roomId");
@@ -688,8 +668,6 @@ export default function PistasCruzadas() {
               style={{ background:C.card, color:C.gold, border:`1px solid ${C.border}`, fontSize:11 }}>📋 {roomId}</button>
             <button className="btn" onClick={leaveRoom}
               style={{ background:C.card, color:C.grayLt, border:`1px solid ${C.border}`, fontSize:11 }}>Salir</button>
-            <button className="btn" onClick={abandonRoom}
-              style={{ background:"rgba(232,54,93,.12)", color:C.red, border:`1px solid rgba(232,54,93,.35)`, fontSize:11 }}>Abandonar</button>
           </div>
         </div>
 
