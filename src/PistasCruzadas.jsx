@@ -781,7 +781,7 @@ export default function PistasCruzadas() {
                             {isComplete ? (
                               <>
                                 <div style={{ fontSize:12, color:C.teal, fontWeight:700, textAlign:"center", wordBreak:"break-all", padding:"0 3px", lineHeight:1.2 }}>{val.word}</div>
-                                <div style={{ fontSize:7, color:C.textDim, marginTop:1 }}>{val.playerName}</div>
+                                <div style={{ fontSize:7, color:"rgba(255,255,255,.6)", marginTop:1 }}>{val.playerName}</div>
                               </>
                             ) : showLost ? (
                               <>
