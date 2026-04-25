@@ -318,8 +318,16 @@ export default function PistasCruzadas() {
     const r = ref(db, `rooms/${roomId}`);
     listenerRef.current = r;
     setConnecting(true);
-    onValue(r, snap => {
+    // Primer fetch forzado desde el servidor (ignora caché local)
+    get(r).then(snap => {
       setConnecting(false);
+      const data = snap.val();
+      if (!data) { setGame(null); return; }
+      setGame(data);
+      checkConsensusServer(data, roomId);
+    });
+    // Listener en tiempo real para updates posteriores
+    onValue(r, snap => {
       const data = snap.val();
       if (!data) { setGame(null); return; }
       setGame(data);
