@@ -41,40 +41,52 @@ const WORD_LIST = CATEGORIES.flat();
 // ── End game messages ─────────────────────────────────────────────────────────
 const END_MESSAGES = {
   perfect: [
-    "🏆 ¡Ganaron! ¡Comunicación perfecta!",
-    "🏆 ¡Ganaron! ¡Son una máquina!",
-    "🏆 ¡Ganaron! ¡Sin errores, increíble!",
-    "🏆 ¡Ganaron! ¡Mente colmena activada!",
-    "🏆 ¡Ganaron! ¡No fallaron ni una!",
-    "🏆 ¡Ganaron! ¡Coordinación de otro nivel!",
-    "🏆 ¡Ganaron! ¡Telepáticos!",
+    "🏆 ¡Telepáticos! ¿Están seguros de que no se copiaron?",
+    "🏆 Comunicación perfecta. Preocupante, honestamente.",
+    "🏆 Sin errores. El tablero llora de envidia.",
+    "🏆 ¿Ensayaron? Porque esto no es normal.",
+    "🏆 Nivel: matrimonio de 40 años.",
+    "🏆 El diccionario los contrató de consultores.",
+    "🏆 Pistas Cruzadas los declara imbatibles. Por ahora.",
+    "🏆 Esto no fue un juego, fue una demostración.",
+    "🏆 ¿Son humanos? Confirmado: no.",
+    "🏆 El tablero completo, sin manchas. Obra de arte.",
   ],
   great: [
-    "🎉 ¡Bien jugado! Casi perfectos.",
-    "🎉 ¡Muy bien! Pero se puede mejorar.",
-    "🎉 ¡Buen equipo! Alguna que otra pifió.",
-    "🎉 ¡Sólido! Unos pocos errores nomás.",
-    "🎉 ¡Muy cerca! Le faltó poquito.",
-    "🎉 ¡Buen resultado! Con práctica se llega.",
-    "🎉 ¡Casi! El equipo funcionó bien.",
+    "🎉 Casi perfectos. El 'casi' duele, ¿no?",
+    "🎉 Muy sólido. Algún día lo logran sin errores.",
+    "🎉 Buena comunicación. Mejorable, pero buena.",
+    "🎉 El tablero quedó impresionado. Más o menos.",
+    "🎉 Un par de pistas raras, pero zafaron bien.",
+    "🎉 Podría haber sido peor. También podría haber sido mejor.",
+    "🎉 El grupo funciona. No pregunten cómo, pero funciona.",
+    "🎉 Bien jugado. El error de la casilla roja los perseguirá.",
+    "🎉 Sólidos. No brillantes, pero sólidos.",
+    "🎉 Casi una obra maestra. Casi.",
   ],
   ok: [
-    "😅 Falta comunicación.",
-    "😅 Se entendieron... más o menos.",
-    "😅 Hay que hablar más antes de jugar.",
-    "😅 Regular. El chat estaba ahí para algo.",
-    "😅 Ni bien ni mal. Más o menos.",
-    "😅 Se notó la duda en más de una.",
-    "😅 Prometedor pero irregular.",
+    "😅 Se entendieron... a veces.",
+    "😅 La mitad bien, la mitad un desastre. Promedio aceptable.",
+    "😅 Algunos son telepáticos. Otros, un misterio.",
+    "😅 Hubo momentos brillantes. Rodeados de caos.",
+    "😅 El tablero los perdonó. Esta vez.",
+    "😅 ¿Hablaban el mismo idioma? Más o menos.",
+    "😅 Regular tirando a bien. O bien tirando a regular.",
+    "😅 Más rojo del esperado. Menos del que merecían.",
+    "😅 Se nota que intentaron. No alcanzó, pero se nota.",
+    "😅 Comunicación en construcción. Obra en progreso.",
   ],
   bad: [
-    "💀 Horribles. A practicar.",
-    "💀 ¿Estaban jugando el mismo juego?",
-    "💀 Comunicación = 0.",
-    "💀 Esto fue un desastre glorioso.",
-    "💀 No se entendieron ni de casualidad.",
-    "💀 El tablero los comió vivos.",
-    "💀 Hay que volver a la escuela.",
+    "💀 Comunicación = 0. Coordinación = negativa.",
+    "💀 El tablero los comió vivos y pidió más.",
+    "💀 ¿Estaban jugando al mismo juego?",
+    "💀 Esto fue un espectáculo. Del tipo que no se puede mirar.",
+    "💀 Practiquen. Mucho. Ya.",
+    "💀 El diccionario se avergüenza de ustedes.",
+    "💀 Histórico. Pero no de la manera linda.",
+    "💀 El tablero quedó más rojo que verde. Reflexionen.",
+    "💀 Nadie entiende cómo llegaron al final. Ni ustedes.",
+    "💀 Récord de errores. Enmarcarlo y colgarlo en la pared.",
   ],
 };
 
@@ -282,6 +294,44 @@ const CSS = `
 // ══════════════════════════════════════════════════════════════════════════════
 // MAIN
 // ══════════════════════════════════════════════════════════════════════════════
+
+// ── Audio ──────────────────────────────────────────────────────────────────────
+function playSuccess() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const notes = [523, 659, 784]; // Do, Mi, Sol
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.value = freq;
+      osc.type = "sine";
+      gain.gain.setValueAtTime(0.25, ctx.currentTime + i * 0.12);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.12 + 0.3);
+      osc.start(ctx.currentTime + i * 0.12);
+      osc.stop(ctx.currentTime + i * 0.12 + 0.3);
+    });
+  } catch(e) {}
+}
+
+function playError() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const notes = [300, 220]; // descendente
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.value = freq;
+      osc.type = "sawtooth";
+      gain.gain.setValueAtTime(0.18, ctx.currentTime + i * 0.18);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.18 + 0.25);
+      osc.start(ctx.currentTime + i * 0.18);
+      osc.stop(ctx.currentTime + i * 0.18 + 0.25);
+    });
+  } catch(e) {}
+}
+
 export default function PistasCruzadas() {
   const [myId] = useState(() => {
     const s = localStorage.getItem("pc_myId");
@@ -295,6 +345,7 @@ export default function PistasCruzadas() {
   const [game, setGame]     = useState(null);
   const [roomId, setRoomId] = useState(() => localStorage.getItem("pc_roomId") || "");
   const listenerRef         = useRef(null);
+  const prevResolvedRef     = useRef({});
   const isMounted           = useRef(false);
 
   const [chatMessages, setChatMessages] = useState([]);
@@ -330,6 +381,15 @@ export default function PistasCruzadas() {
     onValue(r, snap => {
       const data = snap.val();
       if (!data) { setGame(null); return; }
+      // Detectar nuevas casillas resueltas y reproducir sonido
+      const prevResolved = prevResolvedRef.current;
+      const newResolved = data.resolved || {};
+      Object.entries(newResolved).forEach(([coord, val]) => {
+        if (!prevResolved[coord] && val) {
+          if (val.lost) playError(); else playSuccess();
+        }
+      });
+      prevResolvedRef.current = newResolved;
       setGame(data);
       checkConsensusServer(data, roomId);
     });
