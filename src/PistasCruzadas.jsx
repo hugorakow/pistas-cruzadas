@@ -346,6 +346,7 @@ export default function PistasCruzadas() {
   const [roomId, setRoomId] = useState(() => localStorage.getItem("pc_roomId") || "");
   const listenerRef         = useRef(null);
   const prevResolvedRef     = useRef({});
+  const [muted, setMuted]   = useState(() => localStorage.getItem("pc_muted") === "1");
   const isMounted           = useRef(false);
 
   const [chatMessages, setChatMessages] = useState([]);
@@ -386,7 +387,7 @@ export default function PistasCruzadas() {
       const newResolved = data.resolved || {};
       Object.entries(newResolved).forEach(([coord, val]) => {
         if (!prevResolved[coord] && val) {
-          if (val.lost) playError(); else playSuccess();
+          if (!muted) { if (val.lost) playError(); else playSuccess(); }
         }
       });
       prevResolvedRef.current = newResolved;
@@ -750,6 +751,8 @@ export default function PistasCruzadas() {
           <div style={{ display:"flex", gap:6 }}>
             <button className="btn" onClick={() => navigator.clipboard?.writeText(roomId)}
               style={{ background:C.card, color:C.gold, border:`1px solid ${C.border}`, fontSize:11 }}>📋 {roomId}</button>
+            <button className="btn" onClick={() => { const m = !muted; setMuted(m); localStorage.setItem("pc_muted", m ? "1" : "0"); }}
+              style={{ background:C.card, color:C.grayLt, border:`1px solid ${C.border}`, fontSize:16, lineHeight:1 }}>{muted ? "🔇" : "🔊"}</button>
             <button className="btn" onClick={leaveRoom}
               style={{ background:C.card, color:C.grayLt, border:`1px solid ${C.border}`, fontSize:11 }}>Salir</button>
             <button className="btn" onClick={abandonRoom}
