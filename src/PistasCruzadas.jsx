@@ -18,20 +18,20 @@ function getBoardDims(size = 5) {
 }
 
 const CATEGORIES = [
-  ["AGUA","FUEGO","AIRE","TIERRA","HIELO","ARENA","TORMENTA","BOSQUE","DESIERTO","ISLA"],
+  ["AGUA","FUEGO","AIRE","TIERRA","HIELO","ARENA","TORMENTA","BOSQUE","DESIERTO","ISLA","LUNA","ÁCIDO","VOLCÁN"],
   ["CASA","CALLE","CIUDAD","PARQUE","ESCUELA","HOSPITAL","TEATRO","AEROPUERTO","RESTAURANTE","HOTEL"],
-  ["MESA","SILLA","PUERTA","VENTANA","LLAVE","RELOJ","TELÉFONO","LIBRO","LÁMPARA","MOCHILA"],
+  ["MESA","SILLA","PUERTA","VENTANA","LLAVE","RELOJ","TELÉFONO","LIBRO","LÁMPARA","MOCHILA","DIENTE"],
   ["PAN","QUESO","LECHE","CARNE","FRUTA","VERDURA","SOPA","CAFÉ","AZÚCAR","CHOCOLATE"],
-  ["HOMBRE","MUJER","NIÑO","JOVEN","AMIGO","MÉDICO","MAESTRO","POLICÍA","CLIENTE","VECINO"],
+  ["HOMBRE","MUJER","NIÑO","JOVEN","AMIGO","MÉDICO","MAESTRO","POLICÍA","CLIENTE","VECINO","REY"],
   ["PERRO","CABALLO","LEÓN","OSO","PEZ","PÁJARO","MONO","SERPIENTE","ELEFANTE","TIBURÓN"],
   ["CORRER","SALTAR","COMER","DORMIR","LEER","ESCRIBIR","MIRAR","ESCUCHAR","PENSAR","VIAJAR"],
-  ["TIEMPO","DINERO","AMOR","MIEDO","SUEÑO","VIDA","SUERTE","IDEA","CAMBIO","PODER"],
+  ["TIEMPO","DINERO","AMOR","MIEDO","SUEÑO","VIDA","SUERTE","IDEA","CAMBIO","PODER","NADA","CORAZÓN"],
   ["INTERNET","COMPUTADORA","PANTALLA","FOTO","VIDEO","JUEGO","CONTROL","ENERGÍA","MOTOR","MÁQUINA"],
-  ["LUZ","SOMBRA","COLOR","VERDE","ROJO","AZUL","FRÍO","CALOR","RÁPIDO","LENTO"],
+  ["LUZ","SOMBRA","COLOR","VERDE","ROJO","AZUL","FRÍO","CALOR","RÁPIDO","LENTO","ALTO"],
   ["CARTA","ÁRBOL","MATE","VOLUMEN","ESPEJO","CUADRADO","RUEDA","PINTURA","EXTREMO","IMPORTANTE"],
-  ["PARAGUAS","TIJERA","BRÚJULA","LINTERNA","CASCO","ANCLA","BUFANDA","MARTILLO","TELESCOPIO","FUSIBLE"],
+  ["PARAGUAS","TIJERA","BRÚJULA","LINTERNA","CASCO","ANCLA","BUFANDA","MARTILLO","TELESCOPIO","FUSIBLE","IMÁN"],
   ["CAVERNA","FARO","MERCADO","CEMENTERIO","CASTILLO","PALACIO","PUERTO","SUBTE","ESTADIO","FÁBRICA"],
-  ["SILENCIO","JUSTICIA","MEMORIA","RITMO","FRONTERA","PELIGRO","MISTERIO","VICTORIA","TRADICIÓN","EQUILIBRIO"],
+  ["SILENCIO","JUSTICIA","MEMORIA","RITMO","FRONTERA","PELIGRO","MISTERIO","VICTORIA","TRADICIÓN","EQUILIBRIO","META"],
   ["SEXO","HOMOSEXUAL","PECHO","PITO","COLA","JADEO","ORAL","VIRGEN"],
 ];
 
@@ -782,18 +782,57 @@ export default function PistasCruzadas() {
         </div>
 
         {/* Victory */}
-        {allDone && (
-          <div style={{ maxWidth:600, margin:"0 auto 12px", background:"rgba(0,201,167,.1)",
-            border:`1px solid ${C.teal}`, borderRadius:12, padding:"18px 22px", textAlign:"center", animation:"popIn .5s" }}>
-            <div style={{ fontSize:36 }}>{ resolvedCount/TOTAL >= 0.96 ? "🏆" : resolvedCount/TOTAL >= 0.84 ? "🎉" : resolvedCount/TOTAL >= 0.64 ? "😅" : "💀" }</div>
-            <p style={{ fontFamily:"var(--font-title)", color:C.teal, fontSize:18, margin:"8px 0 4px", fontWeight:800 }}>
-              {game.endMessage || "…"}
-            </p>
-            <p style={{ fontFamily:"var(--font-mono)", color:C.grayLt, fontSize:12, margin:0 }}>
-              {resolvedCount} correctas · {discardedCount} errores de {TOTAL}
-            </p>
-          </div>
-        )}
+        {allDone && (() => {
+          // Calcular estadísticas
+          const resolved = game.resolved || {};
+          const playerStats = {};
+          Object.values(resolved).forEach(val => {
+            if (!val?.playerName) return;
+            if (!playerStats[val.playerName]) playerStats[val.playerName] = { correct: 0, lost: 0 };
+            if (val.lost) playerStats[val.playerName].lost++;
+            else playerStats[val.playerName].correct++;
+          });
+          const sorted = Object.entries(playerStats).sort((a,b) => b[1].correct - a[1].correct);
+          const mvp = sorted[0];
+          const pct = Math.round(resolvedCount / TOTAL * 100);
+
+          return (
+            <div style={{ maxWidth:600, margin:"0 auto 12px", background:"rgba(0,201,167,.1)",
+              border:`1px solid ${C.teal}`, borderRadius:12, padding:"18px 22px", textAlign:"center", animation:"popIn .5s" }}>
+              <div style={{ fontSize:36 }}>{ resolvedCount/TOTAL >= 0.96 ? "🏆" : resolvedCount/TOTAL >= 0.84 ? "🎉" : resolvedCount/TOTAL >= 0.64 ? "😅" : "💀" }</div>
+              <p style={{ fontFamily:"var(--font-title)", color:C.teal, fontSize:18, margin:"8px 0 4px", fontWeight:800 }}>
+                {game.endMessage || "…"}
+              </p>
+              <p style={{ fontFamily:"var(--font-mono)", color:C.grayLt, fontSize:12, margin:"0 0 14px" }}>
+                {resolvedCount} correctas · {discardedCount} errores · {pct}% del tablero
+              </p>
+
+              {/* Estadísticas por jugador */}
+              <div style={{ borderTop:`1px solid ${C.border}`, paddingTop:12, display:"flex", flexDirection:"column", gap:6 }}>
+                {sorted.map(([name, stats], i) => {
+                  const total = stats.correct + stats.lost;
+                  const playerPct = total > 0 ? Math.round(stats.correct / total * 100) : 0;
+                  const isMvp = i === 0 && stats.correct > 0;
+                  return (
+                    <div key={name} style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+                      background:"rgba(255,255,255,.04)", borderRadius:8, padding:"7px 12px" }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                        {isMvp && <span style={{ fontSize:14 }}>⭐</span>}
+                        <span style={{ fontFamily:"var(--font-body)", color:C.text, fontSize:13, fontWeight:600 }}>{name}</span>
+                        {isMvp && <span style={{ fontFamily:"var(--font-mono)", color:C.gold, fontSize:9 }}>MVP</span>}
+                      </div>
+                      <div style={{ display:"flex", gap:10, alignItems:"center" }}>
+                        <span style={{ fontFamily:"var(--font-mono)", color:C.teal, fontSize:12 }}>✓ {stats.correct}</span>
+                        {stats.lost > 0 && <span style={{ fontFamily:"var(--font-mono)", color:C.red, fontSize:12 }}>✗ {stats.lost}</span>}
+                        <span style={{ fontFamily:"var(--font-mono)", color:C.grayLt, fontSize:11 }}>{playerPct}%</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Board */}
         <div style={{ maxWidth:600, margin:"0 auto", overflowX:"auto" }}>
